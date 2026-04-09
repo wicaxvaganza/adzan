@@ -244,7 +244,7 @@ if (isset($_GET['adzan'])) {
       <h1 class="text-xl font-semibold">Bot Adzan Banyuwangi</h1>
       <p class="text-slate-500 text-sm">
         Klik <strong>Start</strong> sekali agar browser memberi izin suara. Biarkan tab terbuka.
-        File <code>adzan.mp3</code>, <code>subuh.mp3</code>, <code>sudah.mp3</code>, <code>umbul.mp3</code>, dan <code>kahfi.mp3</code> harus ada di folder yang sama dengan file ini.
+        File <code>adzan.mp3</code>, <code>subuh.mp3</code>, <code>sudah.mp3</code>, <code>asing.mp3</code>, <code>umbul.mp3</code>, dan <code>kahfi.mp3</code> harus ada di folder yang sama dengan file ini.
       </p>
     </div>
     <div class="ml-auto flex items-center gap-2">
@@ -282,10 +282,15 @@ if (isset($_GET['adzan'])) {
   <!-- Tes Presensi Pulang -->
   <div class="mt-3 rounded-lg border border-slate-200 bg-white p-3">
     <div class="text-sm text-slate-700">
-      Presensi Pulang (autoplay <code>umbul.mp3</code>):
+      Presensi Pulang:
+      autoplay <code>asing.mp3</code> di jam pulang -5 menit, lalu <code>umbul.mp3</code> di jam pulang.
       Sen-Kam 14:00, Jumat 11:00, Sabtu 12:30.
     </div>
     <div class="mt-2 flex items-center gap-2">
+      <button id="btnTestAsing" class="rounded-md border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-sm hover:bg-cyan-100">
+        Test asing.mp3
+      </button>
+      <span id="asingTestState" class="text-xs text-slate-500">Idle</span>
       <button id="btnTestUmbul" class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm hover:bg-emerald-100">
         Test umbul.mp3
       </button>
@@ -363,8 +368,10 @@ if (isset($_GET['adzan'])) {
   var btnTestAdzan  = document.getElementById('btnTestAdzan');
   var btnTestSubuh  = document.getElementById('btnTestSubuh');
   var btnTestDoa    = document.getElementById('btnTestDoa');
+  var btnTestAsing  = document.getElementById('btnTestAsing');
   var btnTestUmbul  = document.getElementById('btnTestUmbul');
   var btnTestKahfi  = document.getElementById('btnTestKahfi');
+  var asingTestStateEl = document.getElementById('asingTestState');
   var umbulTestStateEl = document.getElementById('umbulTestState');
   var kahfiTestStateEl = document.getElementById('kahfiTestState');
   var statusBadge   = document.getElementById('statusBadge');
@@ -386,11 +393,13 @@ if (isset($_GET['adzan'])) {
   var nextRunTimestamp      = null;
   var logTimerId            = null;
   var scheduleRefreshTimerId = null;   // <- interval refresh jadwal
+  var asingPlayedToday      = {};      // {'YYYY-MM-DD': {'presensi-minus5':1}}
   var umbulPlayedToday      = {};      // {'YYYY-MM-DD': {'presensi-pulang':1}}
   var kahfiPlayedToday      = {};      // {'YYYY-MM-DD': {'jumat-kahfi':1}}
   var adzanTestAudio        = null;
   var subuhTestAudio        = null;
   var doaTestAudio          = null;
+  var asingTestAudio        = null;
   var umbulTestAudio        = null;
   var kahfiTestAudio        = null;
 
@@ -409,6 +418,20 @@ if (isset($_GET['adzan'])) {
     if(d === 5) return '11:00';          // Jumat
     if(d === 6) return '12:30';          // Sabtu
     return null;                         // Minggu: tidak ada
+  }
+
+  function minusMinutesHHMM(hhmm, minutes){
+    if(!hhmm) return null;
+    var p = String(hhmm).split(':');
+    if(p.length < 2) return null;
+    var h = parseInt(p[0], 10);
+    var m = parseInt(p[1], 10);
+    if(isNaN(h) || isNaN(m)) return null;
+    var total = (h * 60 + m) - minutes;
+    while(total < 0) total += (24 * 60);
+    var hh = String(Math.floor(total / 60) % 24).padStart(2, '0');
+    var mm = String(total % 60).padStart(2, '0');
+    return hh + ':' + mm;
   }
 
   function getJumatKahfiTime(now){
@@ -736,11 +759,29 @@ if (isset($_GET['adzan'])) {
     var tkey = todayKey();
 
     if(!playedToday[tkey]) playedToday[tkey] = {};
+    if(!asingPlayedToday[tkey]) asingPlayedToday[tkey] = {};
     if(!umbulPlayedToday[tkey]) umbulPlayedToday[tkey] = {};
     if(!kahfiPlayedToday[tkey]) kahfiPlayedToday[tkey] = {};
 
-    // Presensi pulang: autoplay umbul.mp3 sesuai hari
+    // Presensi pulang -5 menit: autoplay asing.mp3 sesuai hari
     var jamPulang = getPresensiPulangTime(now);
+    var jamAsing = minusMinutesHHMM(jamPulang, 5);
+    if(jamAsing === cur && !asingPlayedToday[tkey]['presensi-minus5']){
+      playAudioFilesSequential(['asing.mp3']).then(function(res){
+        if(res === 'ok'){
+          asingPlayedToday[tkey]['presensi-minus5'] = 1;
+          try {
+            fetch(
+              window.location.pathname +
+              '?clientlog=1&msg=' +
+              encodeURIComponent('PLAY PRESENSI MINUS5 asing.mp3 at ' + cur)
+            ).catch(function(){});
+          } catch(e) {}
+        }
+      }).catch(function(){});
+    }
+
+    // Presensi pulang: autoplay umbul.mp3 sesuai hari
     if(jamPulang === cur && !umbulPlayedToday[tkey]['presensi-pulang']){
       playAudioFilesSequential(['umbul.mp3']).then(function(res){
         if(res === 'ok'){
@@ -896,6 +937,7 @@ if (isset($_GET['adzan'])) {
     stopAdzanTest();
     stopSubuhTest();
     stopDoaTest();
+    stopAsingTest();
     stopUmbulTest();
     stopKahfiTest();
 
@@ -1099,6 +1141,21 @@ if (isset($_GET['adzan'])) {
     if(umbulTestStateEl) umbulTestStateEl.textContent = 'Idle';
   }
 
+  function updateAsingTestUI(isPlaying){
+    if(!btnTestAsing) return;
+    if(isPlaying){
+      btnTestAsing.textContent = 'Stop asing.mp3';
+      btnTestAsing.classList.remove('border-cyan-200', 'bg-cyan-50', 'hover:bg-cyan-100');
+      btnTestAsing.classList.add('border-rose-200', 'bg-rose-50', 'hover:bg-rose-100');
+      if(asingTestStateEl) asingTestStateEl.textContent = 'Playing (test mode)';
+      return;
+    }
+    btnTestAsing.textContent = 'Test asing.mp3';
+    btnTestAsing.classList.remove('border-rose-200', 'bg-rose-50', 'hover:bg-rose-100');
+    btnTestAsing.classList.add('border-cyan-200', 'bg-cyan-50', 'hover:bg-cyan-100');
+    if(asingTestStateEl) asingTestStateEl.textContent = 'Idle';
+  }
+
   function updateKahfiTestUI(isPlaying){
     if(!btnTestKahfi) return;
     if(isPlaying){
@@ -1123,6 +1180,41 @@ if (isset($_GET['adzan'])) {
       umbulTestAudio = null;
     }
     updateUmbulTestUI(false);
+  }
+
+  function stopAsingTest(){
+    if(asingTestAudio){
+      try {
+        asingTestAudio.pause();
+        asingTestAudio.currentTime = 0;
+      } catch(e) {}
+      asingTestAudio = null;
+    }
+    updateAsingTestUI(false);
+  }
+
+  function startAsingTest(){
+    if(asingTestAudio) return;
+    var audio = new Audio('asing.mp3');
+    audio.preload = 'auto';
+    audio.onended = function(){
+      asingTestAudio = null;
+      updateAsingTestUI(false);
+    };
+    audio.onerror = function(){
+      asingTestAudio = null;
+      updateAsingTestUI(false);
+      alert('Gagal memutar asing.mp3 (cek file & lokasi).');
+    };
+    asingTestAudio = audio;
+    updateAsingTestUI(true);
+    var p = audio.play();
+    if(p && p.catch){
+      p.catch(function(){
+        stopAsingTest();
+        alert('Browser menolak autoplay. Klik halaman lalu ulangi tes.');
+      });
+    }
   }
 
   function startUmbulTest(){
@@ -1199,6 +1291,21 @@ if (isset($_GET['adzan'])) {
       } catch(e) {}
     });
   }
+  if(btnTestAsing){
+    btnTestAsing.addEventListener('click', function(){
+      if(asingTestAudio){
+        stopAsingTest();
+        try {
+          fetch(window.location.pathname + '?clientlog=1&msg=' + encodeURIComponent('STOP TEST asing.mp3'));
+        } catch(e) {}
+        return;
+      }
+      startAsingTest();
+      try {
+        fetch(window.location.pathname + '?clientlog=1&msg=' + encodeURIComponent('TEST asing.mp3'));
+      } catch(e) {}
+    });
+  }
   if(btnTestKahfi){
     btnTestKahfi.addEventListener('click', function(){
       if(kahfiTestAudio){
@@ -1222,6 +1329,7 @@ if (isset($_GET['adzan'])) {
   updateBaseTestButtonUI(btnTestAdzan, 'Tes adzan.mp3', 'Stop adzan.mp3', false);
   updateBaseTestButtonUI(btnTestSubuh, 'Tes subuh.mp3', 'Stop subuh.mp3', false);
   updateBaseTestButtonUI(btnTestDoa, 'Tes sudah.mp3', 'Stop sudah.mp3', false);
+  updateAsingTestUI(false);
   updateUmbulTestUI(false);
   updateKahfiTestUI(false);
 
