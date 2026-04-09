@@ -1001,9 +1001,7 @@ if (isset($_GET['adzan'])) {
     stopUmbulTest();
     stopKahfiTest();
 
-    nextRunTimestamp = null;
-    if(countdownEl) countdownEl.textContent = '--:--:--';
-    if(nextEventEl) nextEventEl.textContent = '-';
+    // Countdown tetap ditampilkan walau engine stopped.
   }
 
   // ===== Event tombol =====
@@ -1396,6 +1394,12 @@ if (isset($_GET['adzan'])) {
   renderSholatListPlaceholder();
   if(modeInfo) modeInfo.textContent = 'Adzan + doa (mp3)';
   updateLogTabUI();
+
+  // Load jadwal + countdown sejak awal agar tetap terlihat meskipun belum Start.
+  loadSholatBanyuwangi(function(){
+    hitungNextRun();
+  });
+
   fetchLogs();
   updateBaseTestButtonUI(btnTestAdzan, 'Tes adzan.mp3', 'Stop adzan.mp3', false);
   updateBaseTestButtonUI(btnTestSubuh, 'Tes subuh.mp3', 'Stop subuh.mp3', false);
