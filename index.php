@@ -85,6 +85,23 @@ if (isset($_GET['viewlog'])) {
     exit;
 }
 
+/* ========= ENDPOINT: view client error log ========= */
+if (isset($_GET['viewclientlog'])) {
+    header('Content-Type: application/json; charset=utf-8');
+    $lines = read_log_lines($CLIENT_LOG_PATH, $MAX_LOG_LINES);
+    $out = @json_encode(array('lines' => $lines), JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    if ($out === false) {
+        $safe = array();
+        foreach ($lines as $l) {
+            $safe[] = mb_convert_encoding($l, 'UTF-8', 'UTF-8');
+        }
+        echo json_encode(array('lines' => $safe), JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+    echo $out;
+    exit;
+}
+
 /* ========= ENDPOINT: clientlog ========= */
 if (isset($_GET['clientlog'])) {
     $msg = isset($_GET['msg']) ? (string)$_GET['msg'] : 'clientlog';
@@ -336,8 +353,16 @@ if (isset($_GET['adzan'])) {
 
   <!-- Log -->
   <div class="mt-6">
+    <div class="mb-2 flex items-center gap-2">
+      <button id="tabLogServer" class="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50">
+        Log server
+      </button>
+      <button id="tabLogError" class="rounded-md border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600 hover:bg-slate-100">
+        Log error
+      </button>
+    </div>
     <div class="text-slate-500 text-sm mb-1">
-      Log server (terbaru paling atas, maksimal <?php echo $MAX_LOG_LINES; ?> baris):
+      <span id="logCaption">Log server</span> (terbaru paling atas, maksimal <?php echo $MAX_LOG_LINES; ?> baris):
     </div>
     <div id="log" class="max-h-56 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-xs text-slate-700">
       Memuat log...
@@ -382,6 +407,9 @@ if (isset($_GET['adzan'])) {
   var sholatListEl  = document.getElementById('sholatList');
   var sholatLastUpd = document.getElementById('sholatLastUpdate');
   var logEl         = document.getElementById('log');
+  var logCaptionEl  = document.getElementById('logCaption');
+  var tabLogServer  = document.getElementById('tabLogServer');
+  var tabLogError   = document.getElementById('tabLogError');
 
   // ===== STATE =====
   var started               = false;
@@ -392,6 +420,7 @@ if (isset($_GET['adzan'])) {
   var countdownTimerId      = null;
   var nextRunTimestamp      = null;
   var logTimerId            = null;
+  var currentLogTab         = 'server'; // server | error
   var scheduleRefreshTimerId = null;   // <- interval refresh jadwal
   var asingPlayedToday      = {};      // {'YYYY-MM-DD': {'presensi-minus5':1}}
   var umbulPlayedToday      = {};      // {'YYYY-MM-DD': {'presensi-pulang':1}}
@@ -855,11 +884,42 @@ if (isset($_GET['adzan'])) {
     });
   }
 
-  // ===== Log server =====
+  // ===== Log viewer =====
+  function updateLogTabUI(){
+    if(logCaptionEl){
+      logCaptionEl.textContent = (currentLogTab === 'error') ? 'Log error' : 'Log server';
+    }
+    if(tabLogServer){
+      if(currentLogTab === 'server'){
+        tabLogServer.classList.remove('border-slate-200', 'bg-slate-50', 'text-slate-600', 'hover:bg-slate-100');
+        tabLogServer.classList.add('border-slate-300', 'bg-white', 'text-slate-700', 'hover:bg-slate-50');
+      } else {
+        tabLogServer.classList.remove('border-slate-300', 'bg-white', 'text-slate-700', 'hover:bg-slate-50');
+        tabLogServer.classList.add('border-slate-200', 'bg-slate-50', 'text-slate-600', 'hover:bg-slate-100');
+      }
+    }
+    if(tabLogError){
+      if(currentLogTab === 'error'){
+        tabLogError.classList.remove('border-slate-200', 'bg-slate-50', 'text-slate-600', 'hover:bg-slate-100');
+        tabLogError.classList.add('border-slate-300', 'bg-white', 'text-slate-700', 'hover:bg-slate-50');
+      } else {
+        tabLogError.classList.remove('border-slate-300', 'bg-white', 'text-slate-700', 'hover:bg-slate-50');
+        tabLogError.classList.add('border-slate-200', 'bg-slate-50', 'text-slate-600', 'hover:bg-slate-100');
+      }
+    }
+  }
+
+  function setLogTab(tab){
+    currentLogTab = (tab === 'error') ? 'error' : 'server';
+    updateLogTabUI();
+    fetchLogs();
+  }
+
   function fetchLogs(){
     if(!logEl) return;
+    var endpoint = (currentLogTab === 'error') ? '?viewclientlog=1' : '?viewlog=1';
     var xhr = new XMLHttpRequest();
-    xhr.open('GET', window.location.pathname + '?viewlog=1', true);
+    xhr.open('GET', window.location.pathname + endpoint, true);
     xhr.onreadystatechange = function(){
       if(xhr.readyState === 4){
         if(xhr.status === 200){
@@ -955,6 +1015,16 @@ if (isset($_GET['adzan'])) {
   if(btnStop){
     btnStop.addEventListener('click', function(){
       stopEngine();
+    });
+  }
+  if(tabLogServer){
+    tabLogServer.addEventListener('click', function(){
+      setLogTab('server');
+    });
+  }
+  if(tabLogError){
+    tabLogError.addEventListener('click', function(){
+      setLogTab('error');
     });
   }
 
@@ -1325,6 +1395,7 @@ if (isset($_GET['adzan'])) {
   // ===== INIT =====
   renderSholatListPlaceholder();
   if(modeInfo) modeInfo.textContent = 'Adzan + doa (mp3)';
+  updateLogTabUI();
   fetchLogs();
   updateBaseTestButtonUI(btnTestAdzan, 'Tes adzan.mp3', 'Stop adzan.mp3', false);
   updateBaseTestButtonUI(btnTestSubuh, 'Tes subuh.mp3', 'Stop subuh.mp3', false);
