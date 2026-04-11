@@ -330,11 +330,11 @@ if (isset($_GET['adzan'])) {
 
   <!-- Countdown -->
   <div class="mt-4 flex items-center gap-3">
-    <span class="text-slate-500 text-sm">Countdown adzan berikutnya:</span>
+    <span class="text-slate-500 text-sm">Countdown event berikutnya:</span>
     <span id="countdown" class="font-bold text-lg text-emerald-700">--:--:--</span>
   </div>
   <div class="mt-1 text-slate-500 text-sm">
-    Adzan berikutnya: <span id="nextEventLabel" class="font-medium text-slate-700">-</span>
+    Event berikutnya: <span id="nextEventLabel" class="font-medium text-slate-700">-</span>
   </div>
   <div class="mt-1 text-slate-500 text-sm">
     Mode: <span id="modeInfo" class="font-medium text-slate-700">Adzan + doa (mp3)</span>
@@ -446,6 +446,12 @@ if (isset($_GET['adzan'])) {
     if(d >= 1 && d <= 4) return '14:00'; // Sen-Kam
     if(d === 5) return '11:00';          // Jumat
     if(d === 6) return '12:30';          // Sabtu
+    return null;                         // Minggu: tidak ada
+  }
+
+  function getPresensiMasukTime(now){
+    var d = now.getDay(); // 0=Min, 1=Sen, ... 6=Sab
+    if(d >= 1 && d <= 6) return '07:00'; // Sen-Sab
     return null;                         // Minggu: tidak ada
   }
 
@@ -677,43 +683,64 @@ if (isset($_GET['adzan'])) {
     sholatLastUpd.textContent = dd + '-' + mm + '-' + yy + ' ' + hh + ':' + mi + ':' + ss + ' WIB';
   }
 
-  // ===== Hitung jadwal adzan berikutnya (untuk countdown) =====
+  // ===== Hitung event berikutnya (untuk countdown) =====
   function nextSholatTS(){
     if(!sholatTimings) return null;
     var now   = new Date();
     var nowMs = now.getTime();
     var list  = [];
 
-    // cari jadwal sisa hari ini
-    SHOLAT_ORDER.forEach(function(k){
-      var hhmm = sholatTimings[k];
+    function pushEvent(hhmm, label){
       if(!hhmm) return;
-      var parts = hhmm.split(':');
+      var parts = String(hhmm).split(':');
+      if(parts.length < 2) return;
       var H = parseInt(parts[0],10);
       var M = parseInt(parts[1],10);
+      if(isNaN(H) || isNaN(M)) return;
       var ts = new Date(
         now.getFullYear(),
         now.getMonth(),
         now.getDate(),
         H, M, 0, 0
       ).getTime();
-
       if(ts > nowMs + 10000){ // yang di depan sekarang + 10 detik
-        list.push({
-          key:   k,
-          ts:    ts,
-          label: 'Adzan ' + SHOLAT_LABEL[k]
-        });
+        list.push({ ts: ts, label: label });
       }
+    }
+
+    // cari jadwal adzan sisa hari ini
+    SHOLAT_ORDER.forEach(function(k){
+      var hhmm = sholatTimings[k];
+      pushEvent(hhmm, 'Adzan ' + SHOLAT_LABEL[k]);
     });
 
-    // kalau masih ada jadwal hari ini
+    // event non-adzan: waktu masuk
+    var jamMasuk = getPresensiMasukTime(now);
+    if(jamMasuk){
+      pushEvent(jamMasuk, 'Waktu masuk');
+    }
+
+    // event non-adzan: presensi pulang -5 dan presensi pulang
+    var jamPulang = getPresensiPulangTime(now);
+    if(jamPulang){
+      var jamAsing = minusMinutesHHMM(jamPulang, 5);
+      pushEvent(jamAsing, 'Presensi -5 (asing.mp3)');
+      pushEvent(jamPulang, 'Waktu pulang (umbul.mp3)');
+    }
+
+    // event non-adzan: Jumat kahfi H-60 sebelum Dzuhur
+    var jamKahfi = getJumatKahfiTime(now);
+    if(jamKahfi){
+      pushEvent(jamKahfi, 'Jumat kahfi H-60 Dzuhur');
+    }
+
+    // kalau masih ada event hari ini
     if(list.length){
       list.sort(function(a,b){ return a.ts - b.ts; });
       return list[0];
     }
 
-    // kalau tidak ada jadwal lagi hari ini, countdown ke Subuh besok
+    // kalau tidak ada event lagi hari ini, countdown ke Subuh besok
     var fajr = sholatTimings.Fajr;
     if(!fajr) return null;
 
@@ -729,7 +756,6 @@ if (isset($_GET['adzan'])) {
     ).getTime();
 
     return {
-      key:   'Fajr',
       ts:    tsBesok,
       label: 'Adzan ' + SHOLAT_LABEL['Fajr'] + ' (besok)'
     };
@@ -773,7 +799,7 @@ if (isset($_GET['adzan'])) {
 
       var dNext = new Date(nextRunTimestamp);
       var jamStr = String(dNext.getHours()).padStart(2,'0') + ':' + String(dNext.getMinutes()).padStart(2,'0');
-      nextEventEl.textContent = (label || 'Adzan') + ' (' + jamStr + ')';
+      nextEventEl.textContent = (label || 'Event') + ' (' + jamStr + ')';
     }, 500);
   }
 
